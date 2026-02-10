@@ -88,6 +88,9 @@ pub struct TrackPublishOptions {
     pub source: TrackSource,
     pub stream: String,
     pub preconnect_buffer: bool,
+    /// When true, signals stereo audio encoding to the SFU via AudioTrackFeature::TfStereo.
+    /// The NativeAudioSource must also be created with num_channels = 2.
+    pub stereo: bool,
 }
 
 impl Default for TrackPublishOptions {
@@ -102,6 +105,7 @@ impl Default for TrackPublishOptions {
             source: TrackSource::Unknown,
             stream: "".to_string(),
             preconnect_buffer: false,
+            stereo: false,
         }
     }
 }

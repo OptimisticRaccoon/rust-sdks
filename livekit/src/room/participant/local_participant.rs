@@ -256,6 +256,7 @@ impl LocalParticipant {
     ) -> RoomResult<LocalTrackPublication> {
         let disable_red = self.local.encryption_type != EncryptionType::None || !options.red;
 
+        #[allow(deprecated)] // stereo + disable_dtx are deprecated in favor of audio_features
         let mut req = proto::AddTrackRequest {
             cid: track.rtc_track().id(),
             name: track.name(),
@@ -264,6 +265,7 @@ impl LocalParticipant {
             source: proto::TrackSource::from(options.source) as i32,
             disable_dtx: !options.dtx,
             disable_red,
+            stereo: options.stereo,
             encryption: proto::encryption::Type::from(self.local.encryption_type) as i32,
             stream: options.stream.clone(),
             ..Default::default()
@@ -271,6 +273,16 @@ impl LocalParticipant {
 
         if options.preconnect_buffer {
             req.audio_features.push(proto::AudioTrackFeature::TfPreconnectBuffer as i32);
+        }
+
+        // Signal stereo and DTX preferences via audio_features (non-deprecated path).
+        // The deprecated scalar fields (disable_dtx, stereo) are still set above for
+        // backwards compatibility with older SFU versions.
+        if options.stereo {
+            req.audio_features.push(proto::AudioTrackFeature::TfStereo as i32);
+        }
+        if !options.dtx {
+            req.audio_features.push(proto::AudioTrackFeature::TfNoDtx as i32);
         }
 
         let mut encodings = Vec::default();
