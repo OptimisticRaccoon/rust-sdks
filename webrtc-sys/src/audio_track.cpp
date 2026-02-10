@@ -139,6 +139,8 @@ AudioTrackSource::InternalSource::InternalSource(
     : options_(options),
       sample_rate_(sample_rate),
       num_channels_(num_channels),
+      queue_size_samples_(0),
+      notify_threshold_samples_(0),
       capture_userdata_(nullptr),
       on_complete_(nullptr) {
   if (!queue_size_ms) {
@@ -201,7 +203,7 @@ AudioTrackSource::InternalSource::InternalSource(
 AudioTrackSource::InternalSource::~InternalSource() {
 }
 
-bool AudioTrackSource::InternalSource::capture_frame(
+CaptureFrameResult AudioTrackSource::InternalSource::capture_frame(
     rust::Slice<const int16_t> data,
     uint32_t sample_rate,
     uint32_t number_of_channels,
@@ -213,11 +215,11 @@ bool AudioTrackSource::InternalSource::capture_frame(
   if (queue_size_samples_) {
     int available =
         (queue_size_samples_ + notify_threshold_samples_) - buffer_.size();
-    if (available < data.size())
-      return false;
+    if (available < static_cast<int>(data.size()))
+      return CaptureFrameResult::BufferFull;
 
     if (on_complete_ || capture_userdata_)
-      return false;
+      return CaptureFrameResult::PendingComplete;
 
     buffer_.insert(buffer_.end(), data.begin(), data.end());
 
@@ -230,12 +232,21 @@ bool AudioTrackSource::InternalSource::capture_frame(
 
   } else {
     // capture directly when the queue buffer is 0 (frame size must be 10ms)
+    if (sinks_.empty()) {
+      return CaptureFrameResult::NotReady;
+    }
     for (auto sink : sinks_)
       sink->OnData(data.data(), sizeof(int16_t) * 8, sample_rate,
                    number_of_channels, number_of_frames);
+    // In direct mode we can complete immediately. This lets Rust use the same
+    // completion mechanism for both buffered and direct capture, which avoids
+    // "PendingComplete" failures during rapid start/stop or channel switching.
+    if (on_complete && ctx) {
+      on_complete(ctx);
+    }
   }
 
-  return true;
+  return CaptureFrameResult::Ok;
 }
 
 void AudioTrackSource::InternalSource::clear_buffer() {
@@ -296,7 +307,7 @@ void AudioTrackSource::set_audio_options(
   source_->set_options(to_native_audio_options(options));
 }
 
-bool AudioTrackSource::capture_frame(
+CaptureFrameResult AudioTrackSource::capture_frame(
     rust::Slice<const int16_t> audio_data,
     uint32_t sample_rate,
     uint32_t number_of_channels,

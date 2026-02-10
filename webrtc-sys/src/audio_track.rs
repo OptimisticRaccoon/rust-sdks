@@ -28,6 +28,14 @@ pub mod ffi {
         pub auto_gain_control: bool,
     }
 
+    #[repr(u8)]
+    pub enum CaptureFrameResult {
+        Ok = 0,
+        NotReady = 1,
+        BufferFull = 2,
+        PendingComplete = 3,
+    }
+
     extern "C++" {
         include!("livekit/media_stream_track.h");
 
@@ -58,7 +66,7 @@ pub mod ffi {
             nb_frames: usize,
             userdata: *const SourceContext,
             on_complete: CompleteCallback,
-        ) -> bool;
+        ) -> CaptureFrameResult;
         fn clear_buffer(self: &AudioTrackSource);
         fn audio_options(self: &AudioTrackSource) -> AudioSourceOptions;
         fn set_audio_options(self: &AudioTrackSource, options: &AudioSourceOptions);

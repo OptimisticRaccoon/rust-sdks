@@ -117,12 +117,12 @@ class AudioTrackSource {
 
     void set_options(const cricket::AudioOptions& options);
 
-    bool capture_frame(rust::Slice<const int16_t> audio_data,
-                       uint32_t sample_rate,
-                       uint32_t number_of_channels,
-                       size_t number_of_frames,
-                       const SourceContext* ctx,
-                       void (*on_complete)(const SourceContext*));
+    CaptureFrameResult capture_frame(rust::Slice<const int16_t> audio_data,
+                                     uint32_t sample_rate,
+                                     uint32_t number_of_channels,
+                                     size_t number_of_frames,
+                                     const SourceContext* ctx,
+                                     void (*on_complete)(const SourceContext*));
 
     void clear_buffer();
 
@@ -159,12 +159,12 @@ class AudioTrackSource {
 
   void set_audio_options(const AudioSourceOptions& options) const;
 
-  bool capture_frame(rust::Slice<const int16_t> audio_data,
-                     uint32_t sample_rate,
-                     uint32_t number_of_channels,
-                     size_t number_of_frames,
-                     const SourceContext* ctx,
-                     CompleteCallback on_complete) const;
+  CaptureFrameResult capture_frame(rust::Slice<const int16_t> audio_data,
+                                   uint32_t sample_rate,
+                                   uint32_t number_of_channels,
+                                   size_t number_of_frames,
+                                   const SourceContext* ctx,
+                                   CompleteCallback on_complete) const;
 
   void clear_buffer() const;
 

@@ -129,7 +129,7 @@ impl NativeAudioSource {
                 // Use a valid no-op callback instead of null for safety
                 // In release mode, transmuting null pointers can cause UB
                 let noop_callback = sys_at::CompleteCallback(noop_complete_callback);
-                let ok = self.sys_handle.capture_frame(
+                let res = self.sys_handle.capture_frame(
                     data,
                     self.sample_rate,
                     self.num_channels,
@@ -137,11 +137,33 @@ impl NativeAudioSource {
                     std::ptr::null(), // Context is still null - callback won't use it
                     noop_callback,
                 );
-                if !ok {
-                    return Err(RtcError {
-                        error_type: RtcErrorType::InvalidState,
-                        message: "failed to capture frame without buffering".to_owned(),
-                    });
+                match res {
+                    sys_at::ffi::CaptureFrameResult::Ok => {}
+                    sys_at::ffi::CaptureFrameResult::NotReady => {
+                        return Err(RtcError {
+                            error_type: RtcErrorType::InvalidState,
+                            message: "audio source not ready for direct capture (no sinks yet)"
+                                .to_owned(),
+                        });
+                    }
+                    sys_at::ffi::CaptureFrameResult::BufferFull => {
+                        return Err(RtcError {
+                            error_type: RtcErrorType::InvalidState,
+                            message: "direct capture rejected: buffer full".to_owned(),
+                        });
+                    }
+                    sys_at::ffi::CaptureFrameResult::PendingComplete => {
+                        return Err(RtcError {
+                            error_type: RtcErrorType::InvalidState,
+                            message: "direct capture rejected: pending completion".to_owned(),
+                        });
+                    }
+                    _ => {
+                        return Err(RtcError {
+                            error_type: RtcErrorType::InvalidState,
+                            message: "failed to capture frame without buffering".to_owned(),
+                        });
+                    }
                 }
             }
             return Ok(());
@@ -162,18 +184,45 @@ impl NativeAudioSource {
 
             unsafe {
                 // In the fast path, C++ never store / invoke on_complete / ctx.
-                if !self.sys_handle.capture_frame(
+                let res = self.sys_handle.capture_frame(
                     chunk,
                     self.sample_rate,
                     self.num_channels,
                     nb_frames,
                     ctx_ptr,
                     sys_at::CompleteCallback(lk_audio_source_complete),
-                ) {
-                    return Err(RtcError {
-                        error_type: RtcErrorType::InvalidState,
-                        message: "failed to capture frame".to_owned(),
-                    });
+                );
+                match res {
+                    sys_at::ffi::CaptureFrameResult::Ok => {}
+                    sys_at::ffi::CaptureFrameResult::NotReady => {
+                        // Avoid leaking the sender on failure.
+                        let _ = Box::from_raw(ctx_ptr as *mut oneshot::Sender<()>);
+                        return Err(RtcError {
+                            error_type: RtcErrorType::InvalidState,
+                            message: "audio source not ready to accept buffered capture".to_owned(),
+                        });
+                    }
+                    sys_at::ffi::CaptureFrameResult::BufferFull => {
+                        let _ = Box::from_raw(ctx_ptr as *mut oneshot::Sender<()>);
+                        return Err(RtcError {
+                            error_type: RtcErrorType::InvalidState,
+                            message: "failed to capture frame: buffer full".to_owned(),
+                        });
+                    }
+                    sys_at::ffi::CaptureFrameResult::PendingComplete => {
+                        let _ = Box::from_raw(ctx_ptr as *mut oneshot::Sender<()>);
+                        return Err(RtcError {
+                            error_type: RtcErrorType::InvalidState,
+                            message: "failed to capture frame: pending completion".to_owned(),
+                        });
+                    }
+                    _ => {
+                        let _ = Box::from_raw(ctx_ptr as *mut oneshot::Sender<()>);
+                        return Err(RtcError {
+                            error_type: RtcErrorType::InvalidState,
+                            message: "failed to capture frame".to_owned(),
+                        });
+                    }
                 }
             }
 
