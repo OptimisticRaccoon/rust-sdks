@@ -104,6 +104,8 @@ pub mod ffi {
             -> UniquePtr<NV12Buffer>;
 
         fn copy_i420_buffer(i420: &UniquePtr<I420Buffer>) -> UniquePtr<I420Buffer>;
+        /// Shallow clone (AddRef) an I420 buffer without copying pixels.
+        fn clone_i420_buffer(i420: &UniquePtr<I420Buffer>) -> UniquePtr<I420Buffer>;
         fn new_i420_buffer(
             width: i32,
             height: i32,

@@ -49,6 +49,9 @@ impl RtcVideoSource {
 pub mod native {
     use std::fmt::{Debug, Formatter};
 
+    use cxx::SharedPtr;
+    use webrtc_sys::video_track::ffi::VideoTrackSource;
+
     use super::*;
     use crate::video_frame::{VideoBuffer, VideoFrame};
 
@@ -74,12 +77,31 @@ pub mod native {
             Self { handle: vs_imp::NativeVideoSource::new(resolution) }
         }
 
+        /// Create a video source intended for screen sharing (screencast).
+        pub fn new_screencast(resolution: VideoResolution) -> Self {
+            Self { handle: vs_imp::NativeVideoSource::new_screencast(resolution) }
+        }
+
         pub fn capture_frame<T: AsRef<dyn VideoBuffer>>(&self, frame: &VideoFrame<T>) {
             self.handle.capture_frame(frame)
         }
 
+        /// Notify the source that a frame was captured via an external injection path
+        /// (e.g., GPU frames pushed directly into the underlying VideoTrackSource).
+        pub fn notify_frame_captured(&self) {
+            self.handle.notify_frame_captured()
+        }
+
         pub fn video_resolution(&self) -> VideoResolution {
             self.handle.video_resolution()
+        }
+
+        /// Get the underlying VideoTrackSource handle for direct frame injection.
+        /// 
+        /// This is used for zero-copy GPU frame capture where D3D11 textures
+        /// are passed directly to the encoder without CPU readback.
+        pub fn sys_handle(&self) -> SharedPtr<VideoTrackSource> {
+            self.handle.sys_handle()
         }
     }
 }

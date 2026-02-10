@@ -213,6 +213,10 @@ class NV12Buffer : public BiplanarYuv8Buffer {
 
 std::unique_ptr<I420Buffer> copy_i420_buffer(
     const std::unique_ptr<I420Buffer>& i420);
+// Shallow clone (AddRef) an I420 buffer without copying pixels. Useful for caching/repeating
+// the same frame without re-conversion/allocation.
+std::unique_ptr<I420Buffer> clone_i420_buffer(
+    const std::unique_ptr<I420Buffer>& i420);
 std::unique_ptr<I420Buffer> new_i420_buffer(int width, int height, int stride_y, int stride_u, int stride_v);
 std::unique_ptr<I422Buffer> new_i422_buffer(int width, int height, int stride_y, int stride_u, int stride_v);
 std::unique_ptr<I444Buffer> new_i444_buffer(int width, int height, int stride_y, int stride_u, int stride_v);

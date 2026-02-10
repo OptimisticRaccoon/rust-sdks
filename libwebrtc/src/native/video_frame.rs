@@ -99,6 +99,16 @@ pub struct I420Buffer {
     sys_handle: UniquePtr<vfb_sys::ffi::I420Buffer>,
 }
 
+impl Clone for I420Buffer {
+    fn clone(&self) -> Self {
+        let sys_handle = vfb_sys::ffi::clone_i420_buffer(&self.sys_handle);
+        if sys_handle.is_null() {
+            panic!("clone_i420_buffer returned null");
+        }
+        Self { sys_handle }
+    }
+}
+
 pub struct I420ABuffer {
     sys_handle: UniquePtr<vfb_sys::ffi::I420ABuffer>,
 }

@@ -299,6 +299,18 @@ std::unique_ptr<I420Buffer> copy_i420_buffer(
   return std::make_unique<I420Buffer>(webrtc::I420Buffer::Copy(*i420->get()));
 }
 
+std::unique_ptr<I420Buffer> clone_i420_buffer(
+    const std::unique_ptr<I420Buffer>& i420) {
+  if (!i420) return nullptr;
+  // Shallow clone: keep the same underlying I420 pixels alive via refcount (AddRef),
+  // without copying. Safe for repeat-last-frame caching as long as the buffer is treated
+  // as immutable after caching.
+  rtc::scoped_refptr<webrtc::VideoFrameBuffer> base = i420->get();
+  return std::make_unique<I420Buffer>(
+      rtc::scoped_refptr<webrtc::I420BufferInterface>(
+          const_cast<webrtc::I420BufferInterface*>(base->GetI420())));
+}
+
 std::unique_ptr<I420Buffer> new_i420_buffer(int width,
                                             int height,
                                             int stride_y,

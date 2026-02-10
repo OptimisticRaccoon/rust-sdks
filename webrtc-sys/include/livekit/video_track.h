@@ -87,8 +87,8 @@ std::shared_ptr<NativeVideoSink> new_native_video_sink(
 class VideoTrackSource {
   class InternalSource : public webrtc::AdaptedVideoTrackSource {
    public:
-    InternalSource(const VideoResolution&
-                       resolution);  // (0, 0) means no resolution/optional, the
+    InternalSource(const VideoResolution& resolution,
+                   bool is_screencast);  // (0, 0) means no resolution/optional, the
                                      // source will guess the resolution at the
                                      // first captured frame
     ~InternalSource() override;
@@ -104,10 +104,11 @@ class VideoTrackSource {
     mutable webrtc::Mutex mutex_;
     webrtc::TimestampAligner timestamp_aligner_;
     VideoResolution resolution_;
+    bool is_screencast_ = false;
   };
 
  public:
-  VideoTrackSource(const VideoResolution& resolution);
+  VideoTrackSource(const VideoResolution& resolution, bool is_screencast);
 
   VideoResolution video_resolution() const;
 
@@ -123,6 +124,13 @@ class VideoTrackSource {
 std::shared_ptr<VideoTrackSource> new_video_track_source(
     const VideoResolution& resolution);
 
+// Create a VideoTrackSource with explicit screencast behavior.
+// This matters for WebRTC's adaptation/degradation logic (especially important
+// for screen sharing + zero-copy GPU frames).
+std::shared_ptr<VideoTrackSource> new_video_track_source_with_screencast(
+    const VideoResolution& resolution,
+    bool is_screencast);
+
 static std::shared_ptr<MediaStreamTrack> video_to_media(
     std::shared_ptr<VideoTrack> track) {
   return track;
@@ -136,5 +144,44 @@ static std::shared_ptr<VideoTrack> media_to_video(
 static std::shared_ptr<VideoTrack> _shared_video_track() {
   return nullptr;  // Ignore
 }
+
+#ifdef _WIN32
+/// Capture a D3D11 GPU frame directly to a VideoTrackSource
+/// 
+/// This is the zero-copy GPU path: creates a D3D11TextureBuffer from the
+/// texture handles, wraps it in a VideoFrame, and pushes to the source.
+/// 
+/// @param source The video track source to capture to
+/// @param texture_handle ID3D11Texture2D* cast to uint64_t
+/// @param device_handle ID3D11Device* cast to uint64_t
+/// @param width Frame width in pixels
+/// @param height Frame height in pixels
+/// @param format DXGI_FORMAT value
+/// @param timestamp_us Timestamp in microseconds (0 = let WebRTC choose)
+/// @return true if frame was captured successfully
+bool capture_d3d11_frame(
+    const std::shared_ptr<VideoTrackSource>& source,
+    uint64_t texture_handle,
+    uint64_t device_handle,
+    uint32_t width,
+    uint32_t height,
+    uint32_t format,
+    int64_t timestamp_us);
+
+/// Capture a D3D11 GPU frame buffer (already created) directly to a VideoTrackSource.
+///
+/// This is used when the caller owns a `D3D11TextureBuffer` instance (opaque pointer) and wants
+/// to push it with a new timestamp (e.g. repeating the last frame during static content to
+/// maintain a minimum FPS).
+///
+/// @param source The video track source to capture to
+/// @param buffer_handle Opaque pointer to `D3D11TextureBuffer` cast to uint64_t
+/// @param timestamp_us Timestamp in microseconds (0 = let WebRTC choose)
+/// @return true if frame was captured successfully
+bool capture_d3d11_frame_buffer_handle(
+    const std::shared_ptr<VideoTrackSource>& source,
+    uint64_t buffer_handle,
+    int64_t timestamp_us);
+#endif  // _WIN32
 
 }  // namespace livekit_ffi

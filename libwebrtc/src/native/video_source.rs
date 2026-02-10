@@ -87,8 +87,62 @@ impl NativeVideoSource {
         source
     }
 
+    /// Create a video source intended for screen sharing (screencast).
+    ///
+    /// This impacts WebRTC's internal adaptation/degradation behavior and helps
+    /// avoid resolution downscales that would otherwise force CPU conversions
+    /// for native (GPU) buffers.
+    pub fn new_screencast(resolution: VideoResolution) -> NativeVideoSource {
+        let source = Self {
+            sys_handle: vt_sys::ffi::new_video_track_source_with_screencast(
+                &vt_sys::ffi::VideoResolution::from(resolution.clone()),
+                true,
+            ),
+            inner: Arc::new(Mutex::new(VideoSourceInner { captured_frames: 0 })),
+        };
+
+        // Keep the same “push dummy frames until first real frame arrives” behavior.
+        livekit_runtime::spawn({
+            let source = source.clone();
+            let i420 = I420Buffer::new(resolution.width, resolution.height);
+            async move {
+                let mut interval = interval(Duration::from_millis(100)); // 10 fps
+
+                loop {
+                    interval.tick().await;
+
+                    let inner = source.inner.lock();
+                    if inner.captured_frames > 0 {
+                        break;
+                    }
+
+                    let mut builder = vf_sys::ffi::new_video_frame_builder();
+                    builder.pin_mut().set_rotation(VideoRotation::VideoRotation0);
+                    builder.pin_mut().set_video_frame_buffer(i420.as_ref().sys_handle());
+
+                    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+                    builder.pin_mut().set_timestamp_us(now.as_micros() as i64);
+
+                    source.sys_handle.on_captured_frame(&builder.pin_mut().build());
+                }
+            }
+        });
+
+        source
+    }
+
     pub fn sys_handle(&self) -> SharedPtr<vt_sys::ffi::VideoTrackSource> {
         self.sys_handle.clone()
+    }
+
+    /// Notify the source that an external capture pipeline has delivered a frame.
+    ///
+    /// This is important when frames are injected via non-standard paths (e.g. GPU
+    /// frames injected directly into the underlying VideoTrackSource) because the
+    /// built-in "dummy frame until first real frame" loop relies on `captured_frames`.
+    pub fn notify_frame_captured(&self) {
+        let mut inner = self.inner.lock();
+        inner.captured_frames += 1;
     }
 
     pub fn capture_frame<T: AsRef<dyn VideoBuffer>>(&self, frame: &VideoFrame<T>) {

@@ -68,9 +68,42 @@ pub mod ffi {
         fn video_resolution(self: &VideoTrackSource) -> VideoResolution;
         fn on_captured_frame(self: &VideoTrackSource, frame: &UniquePtr<VideoFrame>) -> bool;
         fn new_video_track_source(resolution: &VideoResolution) -> SharedPtr<VideoTrackSource>;
+        fn new_video_track_source_with_screencast(
+            resolution: &VideoResolution,
+            is_screencast: bool,
+        ) -> SharedPtr<VideoTrackSource>;
         fn video_to_media(track: SharedPtr<VideoTrack>) -> SharedPtr<MediaStreamTrack>;
         unsafe fn media_to_video(track: SharedPtr<MediaStreamTrack>) -> SharedPtr<VideoTrack>;
         fn _shared_video_track() -> SharedPtr<VideoTrack>;
+
+        /// Capture a D3D11 GPU frame directly to a VideoTrackSource (Windows only)
+        /// 
+        /// This is the zero-copy GPU path: creates a D3D11TextureBuffer from the
+        /// texture handles, wraps it in a VideoFrame, and pushes to the source.
+        /// 
+        /// Returns true if the frame was captured successfully.
+        #[cfg(target_os = "windows")]
+        fn capture_d3d11_frame(
+            source: &SharedPtr<VideoTrackSource>,
+            texture_handle: u64,
+            device_handle: u64,
+            width: u32,
+            height: u32,
+            format: u32,
+            timestamp_us: i64,
+        ) -> bool;
+
+        /// Capture a D3D11 GPU frame buffer (already created) directly to a VideoTrackSource (Windows only).
+        ///
+        /// This is used for caching/repeating frames (e.g. minimum FPS during static content),
+        /// because the underlying `D3D11TextureBuffer::Create` adopts (consumes) a COM ref on the
+        /// texture; reusing raw texture pointers without owning a ref can crash.
+        #[cfg(target_os = "windows")]
+        fn capture_d3d11_frame_buffer_handle(
+            source: &SharedPtr<VideoTrackSource>,
+            buffer_handle: u64,
+            timestamp_us: i64,
+        ) -> bool;
     }
 
     extern "Rust" {

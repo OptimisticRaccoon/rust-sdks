@@ -194,6 +194,14 @@ new_buffer_type!(I444Buffer, I444, as_i444);
 new_buffer_type!(I010Buffer, I010, as_i010);
 new_buffer_type!(NV12Buffer, NV12, as_nv12);
 
+impl Clone for I420Buffer {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle.clone(),
+        }
+    }
+}
+
 impl I420Buffer {
     pub fn with_strides(
         width: u32,
