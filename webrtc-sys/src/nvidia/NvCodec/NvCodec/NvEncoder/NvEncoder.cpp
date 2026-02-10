@@ -611,6 +611,7 @@ void NvEncoder::GetEncodedPacket(std::vector<NV_ENC_OUTPUT_PTR>& vOutputBuffer,
                                  bool bOutputDelay) {
   unsigned i = 0;
   int iEnd = bOutputDelay ? m_iToSend - m_nOutputDelay : m_iToSend;
+  m_vFrameAvgQP.clear();
   for (; m_iGot < iEnd; m_iGot++) {
     WaitForCompletionEvent(m_iGot % m_nEncoderBuffer);
     NV_ENC_LOCK_BITSTREAM lockBitstreamData = {NV_ENC_LOCK_BITSTREAM_VER};
@@ -624,6 +625,7 @@ void NvEncoder::GetEncodedPacket(std::vector<NV_ENC_OUTPUT_PTR>& vOutputBuffer,
       vPacket.push_back(std::vector<uint8_t>());
     }
     vPacket[i].clear();
+    m_vFrameAvgQP.push_back(lockBitstreamData.frameAvgQP);
 
     if ((m_initializeParams.encodeGUID == NV_ENC_CODEC_AV1_GUID) &&
         (m_bUseIVFContainer)) {
@@ -977,6 +979,31 @@ int NvEncoder::GetCapabilityValue(GUID guidCodec, NV_ENC_CAPS capsToQuery) {
   int v;
   m_nvenc.nvEncGetEncodeCaps(m_hEncoder, guidCodec, &capsParam, &v);
   return v;
+}
+
+bool NvEncoder::IsEncodeGuidSupported(GUID codecGuid) {
+  if (!m_hEncoder) {
+    return false;
+  }
+
+  uint32_t guidCount = 0;
+  NVENC_API_CALL(m_nvenc.nvEncGetEncodeGUIDCount(m_hEncoder, &guidCount));
+  if (guidCount == 0) {
+    return false;
+  }
+
+  std::vector<GUID> guids(guidCount);
+  uint32_t guidCountOut = guidCount;
+  NVENC_API_CALL(
+      m_nvenc.nvEncGetEncodeGUIDs(m_hEncoder, guids.data(), guidCount, &guidCountOut));
+
+  const uint32_t n = (guidCountOut < guidCount) ? guidCountOut : guidCount;
+  for (uint32_t i = 0; i < n; ++i) {
+    if (memcmp(&guids[i], &codecGuid, sizeof(GUID)) == 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 int NvEncoder::GetFrameSize() const {

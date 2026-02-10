@@ -1,13 +1,21 @@
-#include "cuda_context.h"
-
-#include "rtc_base/checks.h"
-#include "rtc_base/logging.h"
-
+// Must define WIN32_LEAN_AND_MEAN before any Windows headers to avoid WinSock conflicts
 #if defined(WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
 #include <windows.h>
 #else
 #include <dlfcn.h>
 #endif
+
+#include "cuda_context.h"
+
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
 
 #include <iostream>
 
@@ -104,6 +112,9 @@ bool CudaContext::IsAvailable() {
 
 bool CudaContext::Initialize() {
   // Initialize CUDA context
+  if (cu_context_) {
+    return true;
+  }
 
   bool success = load_cuda_modules();
   if (!success) {

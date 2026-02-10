@@ -1,3 +1,15 @@
+// Must define WIN32_LEAN_AND_MEAN before any Windows headers to avoid WinSock conflicts
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <windows.h>
+#endif
+
 #include "h265_encoder_impl.h"
 
 #include <algorithm>
@@ -277,8 +289,10 @@ int32_t NvidiaH265EncoderImpl::Encode(
     std::vector<std::vector<uint8_t>> bit_stream;
     encoder_->EncodeFrame(bit_stream, &pic_params);
 
-    for (std::vector<uint8_t>& packet : bit_stream) {
-      int32_t result = ProcessEncodedFrame(packet, input_frame);
+    const auto& qp_vec = encoder_->GetFrameAvgQP();
+    for (size_t pkt_idx = 0; pkt_idx < bit_stream.size(); pkt_idx++) {
+      uint32_t avg_qp = (pkt_idx < qp_vec.size()) ? qp_vec[pkt_idx] : 0;
+      int32_t result = ProcessEncodedFrame(bit_stream[pkt_idx], input_frame, avg_qp);
       if (result != WEBRTC_VIDEO_CODEC_OK) {
         return result;
       }
@@ -294,7 +308,8 @@ int32_t NvidiaH265EncoderImpl::Encode(
 
 int32_t NvidiaH265EncoderImpl::ProcessEncodedFrame(
     std::vector<uint8_t>& packet,
-    const ::webrtc::VideoFrame& inputFrame) {
+    const ::webrtc::VideoFrame& inputFrame,
+    uint32_t nvenc_avg_qp) {
   encoded_image_._encodedWidth = encoder_->GetEncodeWidth();
   encoded_image_._encodedHeight = encoder_->GetEncodeHeight();
   encoded_image_.SetRtpTimestamp(inputFrame.rtp_timestamp());
@@ -313,7 +328,7 @@ int32_t NvidiaH265EncoderImpl::ProcessEncodedFrame(
       EncodedImageBuffer::Create(packet.data(), packet.size()));
   encoded_image_.set_size(packet.size());
 
-  encoded_image_.qp_ = -1;
+  encoded_image_.qp_ = static_cast<int32_t>(nvenc_avg_qp);
 
   CodecSpecificInfo codecInfo;
   codecInfo.codecType = kVideoCodecH265;
@@ -330,12 +345,15 @@ int32_t NvidiaH265EncoderImpl::ProcessEncodedFrame(
 
 VideoEncoder::EncoderInfo NvidiaH265EncoderImpl::GetEncoderInfo() const {
   EncoderInfo info;
-  info.supports_native_handle = false;
+  // Enable native handle support for GPU frame passthrough (D3D11 textures)
+  // This tells WebRTC that we can consume GPU-backed frames directly
+  info.supports_native_handle = true;
   info.implementation_name = "NVIDIA H265 Encoder";
   info.scaling_settings = VideoEncoder::ScalingSettings::kOff;
   info.is_hardware_accelerated = true;
   info.supports_simulcast = false;
-  info.preferred_pixel_formats = {VideoFrameBuffer::Type::kI420};
+  // Accept both I420 (CPU) and kNative (GPU D3D11 textures)
+  info.preferred_pixel_formats = {VideoFrameBuffer::Type::kNative, VideoFrameBuffer::Type::kI420};
   return info;
 }
 

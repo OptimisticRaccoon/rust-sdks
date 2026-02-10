@@ -63,7 +63,8 @@ class NvidiaH265EncoderImpl : public VideoEncoder {
 
  private:
   int32_t ProcessEncodedFrame(std::vector<uint8_t>& packet,
-                              const ::webrtc::VideoFrame& inputFrame);
+                              const ::webrtc::VideoFrame& inputFrame,
+                              uint32_t nvenc_avg_qp);
  private:
   const webrtc::Environment& env_;
   EncodedImageCallback* encoded_image_callback_ = nullptr;

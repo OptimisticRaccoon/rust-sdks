@@ -132,6 +132,13 @@ class NvEncoder {
                            NV_ENC_PIC_PARAMS* pPicParams = nullptr);
 
   /**
+   *  @brief  Returns per-packet average QP values from the most recent
+   *  EncodeFrame() or EndEncode() call. Indices correspond 1:1 with the
+   *  vPacket vector. Populated from NV_ENC_LOCK_BITSTREAM::frameAvgQP.
+   */
+  const std::vector<uint32_t>& GetFrameAvgQP() const { return m_vFrameAvgQP; }
+
+  /**
    *  @brief  This function to flush the encoder queue.
    *  The encoder might be queuing frames for B picture encoding or lookahead;
    *  the application must call EndEncode() to get all the queued encoded frames
@@ -146,6 +153,13 @@ class NvEncoder {
    * encode dimensions, support for lookahead or the ME-only mode etc.
    */
   int GetCapabilityValue(GUID guidCodec, NV_ENC_CAPS capsToQuery);
+
+  /**
+   * @brief Returns true if the codec GUID is supported by the current NVENC driver.
+   *
+   * This queries the NVENC session for supported encode GUIDs.
+   */
+  bool IsEncodeGuidSupported(GUID codecGuid);
 
   /**
    *  @brief  This function is used to get the current device on which encoder
@@ -485,6 +499,10 @@ class NvEncoder {
   IVFUtils m_IVFUtils;
   bool m_bWriteIVFFileHeader = true;
   bool m_bUseIVFContainer = true;
+
+  // Per-packet average QP reported by NVENC (populated by GetEncodedPacket).
+  // Indices correspond 1:1 with the vPacket vector returned by EncodeFrame/EndEncode.
+  std::vector<uint32_t> m_vFrameAvgQP;
 
  private:
   uint32_t m_nWidth;

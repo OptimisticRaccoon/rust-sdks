@@ -18,6 +18,7 @@ class NvidiaVideoEncoderFactory : public VideoEncoderFactory {
   ~NvidiaVideoEncoderFactory() override;
 
   static bool IsSupported();
+  static bool IsAv1Supported();
 
   std::unique_ptr<VideoEncoder> Create(const Environment& env,
                                        const SdpVideoFormat& format) override;
