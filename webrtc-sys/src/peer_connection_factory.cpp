@@ -21,6 +21,7 @@
 
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
+#include "livekit/audio_encoder_factory.h"
 #include "api/audio/builtin_audio_processing_builder.h"
 #include "api/environment/environment_factory.h"
 #include "api/peer_connection_interface.h"
@@ -72,7 +73,7 @@ PeerConnectionFactory::PeerConnectionFactory(
       std::move(std::make_unique<livekit_ffi::VideoEncoderFactory>());
   dependencies.video_decoder_factory =
       std::move(std::make_unique<livekit_ffi::VideoDecoderFactory>());
-  dependencies.audio_encoder_factory = webrtc::CreateBuiltinAudioEncoderFactory();
+  dependencies.audio_encoder_factory = livekit_ffi::CreateWrappedAudioEncoderFactory();
   dependencies.audio_decoder_factory = webrtc::CreateBuiltinAudioDecoderFactory();
   dependencies.audio_processing = webrtc::BuiltinAudioProcessingBuilder()
                                       .Build(webrtc::CreateEnvironment());
