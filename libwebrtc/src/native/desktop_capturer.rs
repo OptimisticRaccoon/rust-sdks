@@ -16,6 +16,7 @@ use cxx::UniquePtr;
 use webrtc_sys::desktop_capturer::{self as sys_dc, ffi::new_desktop_capturer};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
+#[allow(dead_code)]
 pub(crate) enum SourceType {
     Screen,
     Window,
@@ -63,6 +64,7 @@ impl DesktopCapturerOptions {
             SourceType::Window => sys_dc::ffi::SourceType::Window,
             SourceType::Generic => sys_dc::ffi::SourceType::Generic,
         };
+        #[allow(unused_mut)]
         let mut sys_handle = sys_dc::ffi::DesktopCapturerOptions {
             source_type,
             include_cursor: self.include_cursor,
