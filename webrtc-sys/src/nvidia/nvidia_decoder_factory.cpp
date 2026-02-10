@@ -1,3 +1,15 @@
+// Must define WIN32_LEAN_AND_MEAN before any Windows headers to avoid WinSock conflicts
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <windows.h>
+#endif
+
 #include "nvidia_decoder_factory.h"
 
 #include <modules/video_coding/codecs/h264/include/h264.h>
