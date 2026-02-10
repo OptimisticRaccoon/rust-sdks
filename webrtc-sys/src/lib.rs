@@ -20,8 +20,13 @@ pub mod audio_resampler;
 pub mod audio_track;
 pub mod candidate;
 pub mod data_channel;
+#[cfg(target_os = "windows")]
+pub mod d3d11_frame_buffer;
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub mod desktop_capturer;
+pub mod encoder_config;
+pub mod nvenc_settings;
+pub mod opus_config;
 pub mod frame_cryptor;
 pub mod helper;
 pub mod jsep;

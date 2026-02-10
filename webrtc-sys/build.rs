@@ -27,6 +27,8 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=LK_DEBUG_WEBRTC");
     println!("cargo:rerun-if-env-changed=LK_CUSTOM_WEBRTC");
+    println!("cargo:rerun-if-env-changed=CUDA_PATH");
+    println!("cargo:rerun-if-env-changed=CUDA_HOME");
 
     let mut rust_files = vec![
         "src/peer_connection.rs",
@@ -54,11 +56,21 @@ fn main() {
         "src/prohibit_libsrtp_initialization.rs",
         "src/apm.rs",
         "src/audio_mixer.rs",
+        "src/encoder_config.rs",
+        "src/opus_config.rs",
     ];
 
     if is_desktop {
         rust_files.push("src/desktop_capturer.rs");
     }
+
+    // Windows-only D3D11 frame buffer support
+    if target_os == "windows" {
+        rust_files.push("src/d3d11_frame_buffer.rs");
+    }
+
+    // Process-global NVENC settings bridge (no-op on non-NVIDIA systems).
+    rust_files.push("src/nvenc_settings.rs");
 
     let mut builder = cxx_build::bridges(rust_files);
 
@@ -82,6 +94,7 @@ fn main() {
         "src/video_frame_buffer.cpp",
         "src/video_encoder_factory.cpp",
         "src/video_decoder_factory.cpp",
+        "src/nvenc_settings.cpp",
         "src/audio_device.cpp",
         "src/audio_resampler.cpp",
         "src/frame_cryptor.cpp",
@@ -89,6 +102,7 @@ fn main() {
         "src/prohibit_libsrtp_initialization.cpp",
         "src/apm.cpp",
         "src/audio_mixer.cpp",
+        "src/audio_encoder_factory.cpp",
     ]);
 
     if is_desktop {
@@ -122,6 +136,15 @@ fn main() {
         builder.define(key.as_str(), value);
     }
 
+    // Enable libaom AV1 software encoder support.
+    // The prebuilt libwebrtc includes libaom (via enable_libaom=true in build scripts),
+    // but our wrapper code needs this define to register the LibaomAv1EncoderTemplateAdapter.
+    builder.define("RTC_USE_LIBAOM_AV1_ENCODER", "1");
+
+    // Enable H265/HEVC support in the encoder factory.
+    // The prebuilt libwebrtc includes H265 support, but the wrapper needs this define.
+    builder.define("RTC_ENABLE_H265", "1");
+
     // Link webrtc library
     println!("cargo:rustc-link-lib=static=webrtc");
     match target_os.as_str() {
@@ -148,17 +171,66 @@ fn main() {
             //println!("cargo:rustc-link-lib=dylib=va_win32");
 
             builder
-                //.include("./vaapi-windows/DirectX-Headers-1.0/include")
-                //.include(path::PathBuf::from("./vaapi-windows/x64/include"))
-                //.file("vaapi-windows/DirectX-Headers-1.0/src/dxguids.cpp")
-                //.file("src/vaapi/vaapi_display_win32.cpp")
-                //.file("src/vaapi/vaapi_h264_encoder_wrapper.cpp")
-                //.file("src/vaapi/vaapi_encoder_factory.cpp")
-                //.file("src/vaapi/h264_encoder_impl.cpp")
                 .flag("/std:c++20")
-                //.flag("/wd4819")
-                //.flag("/wd4068")
-                .flag("/EHsc");
+                .flag("/EHsc")
+                // D3D11 frame buffer support for GPU-backed video frames
+                .file("src/d3d11_frame_buffer.cpp");
+
+            // NVIDIA NVENC support on Windows
+            // Detect CUDA SDK via CUDA_PATH environment variable (standard on Windows)
+            let cuda_path = env::var("CUDA_PATH")
+                .or_else(|_| env::var("CUDA_HOME"))
+                .ok()
+                .map(PathBuf::from);
+
+            if let Some(cuda_dir) = cuda_path {
+                let cuda_include = cuda_dir.join("include");
+                let cuda_lib = cuda_dir.join("lib").join("x64");
+                
+                if cuda_include.join("cuda.h").exists() {
+                    println!("cargo:warning=CUDA SDK found at {}, enabling NVENC support", cuda_dir.display());
+                    
+                    // Add CUDA and NvCodec include paths
+                    builder
+                        .include(&cuda_include)
+                        .include("src/nvidia/NvCodec/include")
+                        .include("src/nvidia/NvCodec/NvCodec")
+                        .include("src/nvidia");
+                    
+                    // Add NVIDIA encoder source files (decoder not needed for screen sharing)
+                    builder
+                        .file("src/nvidia/NvCodec/NvCodec/NvEncoder/NvEncoder.cpp")
+                        .file("src/nvidia/NvCodec/NvCodec/NvEncoder/NvEncoderCuda.cpp")
+                        .file("src/nvidia/NvCodec/NvCodec/NvEncoder/NvEncoderD3D11.cpp")
+                        .file("src/nvidia/h264_encoder_impl.cpp")
+                        .file("src/nvidia/h265_encoder_impl.cpp")
+                        .file("src/nvidia/av1_encoder_impl.cpp")
+                        .file("src/nvidia/nvidia_encoder_factory.cpp")
+                        .file("src/nvidia/cuda_context.cpp");
+                    
+                    // Enable NVIDIA video encoder define (not decoder - we don't need nvcuvid for screen sharing)
+                    builder.define("USE_NVIDIA_VIDEO_ENCODER", "1");
+                    
+                    // Link CUDA libraries for D3D11 interop and driver API
+                    // Note: nvcuvid.lib not needed since we only use encoder (not decoder)
+                    if cuda_lib.exists() {
+                        println!("cargo:rustc-link-search=native={}", cuda_lib.display());
+                        println!("cargo:rustc-link-lib=dylib=cudart");
+                        println!("cargo:rustc-link-lib=dylib=cuda");     // CUDA driver API
+                    }
+                    
+                    // Suppress deprecation warnings from CUDA headers
+                    builder.flag("/wd4996");
+                } else {
+                    println!(
+                        "cargo:warning=CUDA_PATH set to {} but cuda.h not found; building without NVENC support",
+                        cuda_dir.display()
+                    );
+                }
+            } else {
+                println!("cargo:warning=CUDA_PATH not set; building without NVENC hardware encoder support. \
+                         Set CUDA_PATH to your CUDA Toolkit installation (e.g., C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.x) to enable NVENC.");
+            }
         }
         "linux" => {
             println!("cargo:rustc-link-lib=dylib=rt");
@@ -211,29 +283,26 @@ fn main() {
                 });
                 let cuda_include_dir = cuda_home.join("include");
 
-                // libcuda and libnvcuvid are dlopened, so do not link them.
+                // libcuda is dlopened, so do not link it.
+                // Note: nvcuvid not needed since we only use encoder (not decoder)
                 if cuda_include_dir.join("cuda.h").exists() {
                     builder
                         .include(cuda_include_dir)
                         .flag("-Isrc/nvidia/NvCodec/include")
                         .flag("-Isrc/nvidia/NvCodec/NvCodec")
-                        .file("src/nvidia/NvCodec/NvCodec/NvDecoder/NvDecoder.cpp")
                         .file("src/nvidia/NvCodec/NvCodec/NvEncoder/NvEncoder.cpp")
                         .file("src/nvidia/NvCodec/NvCodec/NvEncoder/NvEncoderCuda.cpp")
                         .file("src/nvidia/h264_encoder_impl.cpp")
                         .file("src/nvidia/h265_encoder_impl.cpp")
-                        .file("src/nvidia/h264_decoder_impl.cpp")
-                        .file("src/nvidia/h265_decoder_impl.cpp")
-                        .file("src/nvidia/nvidia_decoder_factory.cpp")
                         .file("src/nvidia/nvidia_encoder_factory.cpp")
                         .file("src/nvidia/cuda_context.cpp")
                         .flag("-Wno-deprecated-declarations")
-                        .flag("-DUSE_NVIDIA_VIDEO_CODEC=1");
+                        .flag("-DUSE_NVIDIA_VIDEO_ENCODER=1");
 
                     add_lazy_load_so(
                         &mut builder,
                         "nvidia",
-                        ["cuda", "nvcuvid"].map(String::from).to_vec(),
+                        ["cuda"].map(String::from).to_vec(),
                     );
                 } else {
                     println!("cargo:warning=cuda.h not found; building without hardware accelerated video codec support for NVidia GPUs");
