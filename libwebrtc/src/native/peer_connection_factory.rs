@@ -35,6 +35,41 @@ lazy_static! {
     static ref LOG_SINK: Mutex<Option<UniquePtr<sys_rtc::ffi::LogSink>>> = Default::default();
 }
 
+fn categorize_webrtc_log_target(msg: &str) -> &'static str {
+    // WebRTC default log lines look like: "(file.cc:123): message..."
+    // We categorize by file to allow fine-grained filtering via RUST_LOG.
+    let file = msg
+        .strip_prefix('(')
+        .and_then(|s| s.split_once(':').map(|(f, _)| f))
+        .unwrap_or("");
+
+    match file {
+        // ICE / connectivity checks
+        "stun_port.cc" | "port.cc" | "connection.cc" | "ice_transport.cc" | "p2p_transport_channel.cc" => {
+            "libwebrtc::ice"
+        }
+
+        // Bandwidth estimation / probing / allocator
+        "bitrate_allocator.cc" | "probe_controller.cc" | "trendline_estimator.cc" | "goog_cc_network_control.cc" => {
+            "libwebrtc::bwe"
+        }
+
+        // RTP sender/receiver pipeline
+        "rtp_sender_video.cc" | "rtp_video_sender.cc" | "rtp_transport_controller_send.cc" => {
+            "libwebrtc::rtp"
+        }
+
+        // Video send / encoder pipeline
+        "video_send_stream_impl.cc" | "video_stream_encoder.cc" => "libwebrtc::video",
+
+        // Timing / timestamps
+        "timestamp_aligner.cc" => "libwebrtc::timing",
+
+        // Fallback
+        _ => "libwebrtc",
+    }
+}
+
 #[derive(Clone)]
 pub struct PeerConnectionFactory {
     pub(crate) sys_handle: SharedPtr<sys_pcf::ffi::PeerConnectionFactory>,
@@ -44,10 +79,29 @@ impl Default for PeerConnectionFactory {
     fn default() -> Self {
         let mut log_sink = LOG_SINK.lock();
         if log_sink.is_none() {
-            *log_sink = Some(sys_rtc::ffi::new_log_sink(|msg, _| {
+            *log_sink = Some(sys_rtc::ffi::new_log_sink(|msg, sev| {
                 let msg = msg.strip_suffix("\r\n").or(msg.strip_suffix('\n')).unwrap_or(&msg);
+                let target = categorize_webrtc_log_target(msg);
 
-                log::debug!(target: "libwebrtc", "{}", msg);
+                match sev {
+                    sys_rtc::ffi::LoggingSeverity::Verbose => {
+                        log::trace!(target: target, "{}", msg);
+                    }
+                    sys_rtc::ffi::LoggingSeverity::Info => {
+                        log::info!(target: target, "{}", msg);
+                    }
+                    sys_rtc::ffi::LoggingSeverity::Warning => {
+                        log::warn!(target: target, "{}", msg);
+                    }
+                    sys_rtc::ffi::LoggingSeverity::Error => {
+                        log::error!(target: target, "{}", msg);
+                    }
+                    sys_rtc::ffi::LoggingSeverity::None => {}
+                    _ => {
+                        // CXX enums may carry unknown numeric values across FFI; don't crash/log-spam.
+                        log::debug!(target: target, "{}", msg);
+                    }
+                }
             }));
         }
 

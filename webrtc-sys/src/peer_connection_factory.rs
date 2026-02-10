@@ -24,6 +24,10 @@ use crate::{
 
 #[cxx::bridge(namespace = "livekit_ffi")]
 pub mod ffi {
+    // =========================================================================
+    // Peer Connection Types
+    // =========================================================================
+
     pub struct CandidatePair {
         local: SharedPtr<Candidate>,
         remote: SharedPtr<Candidate>,
@@ -86,6 +90,17 @@ pub mod ffi {
 
         type PeerConnection = crate::peer_connection::ffi::PeerConnection;
         type PeerConnectionFactory;
+
+        // =====================================================================
+        // Global Encoder Configuration (Design A - Process-global)
+        // Note: Encoder config is managed via zenspeak-webrtc crate which
+        // provides a pure-Rust interface. The C++ implementation in 
+        // video_encoder_factory.cpp handles the actual selection.
+        // =====================================================================
+
+        // =====================================================================
+        // Factory Creation
+        // =====================================================================
 
         fn create_peer_connection_factory() -> SharedPtr<PeerConnectionFactory>;
 
